@@ -2,6 +2,10 @@
 
 // const puppeteer = require('puppeteer');
 import puppeteer from 'puppeteer';
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const speech = require('@google-cloud/speech');
 
 // Function to join Google Meet
 export async function joinGoogleMeet(meetUrl, email, password) {
@@ -38,10 +42,57 @@ export async function joinGoogleMeet(meetUrl, email, password) {
     // Optionally: Wait for a few seconds to make sure the meeting is joined
     await page.waitForTimeout(5000);
     console.log('Successfully joined the Google Meet!');
+    startRecording();
 
     // Keep the browser open (for debugging, or close it with browser.close() when done)
     // await browser.close();
   } catch (error) {
     console.error('An error occurred while trying to join the Google Meet:', error);
   }
+}
+
+// keep outputFile as the env variable so as to change to it whenever required.
+function startRecording(outputFile) {
+  const ffmpegCommand = `ffmpeg -y -f alsa -i default -t 3600 ${outputFile}`; // Record for up to 1 hour
+  const recordingProcess = exec(ffmpegCommand);
+  console.log(`Recording audio to ${outputFile}...`);
+  return recordingProcess;
+}
+
+export async function transcribeAudio(audioFilePath) {
+  let trnascriptResponse = {
+    "meet-transcript": "",
+    "success": true
+  }
+  try {
+    const client = new speech.speechClient();
+    const audio = {
+      content: fs.readFileSync(audioFilePath).toString('base64')
+
+    }
+
+    const config = {
+      encoding: 'LINEAR16',
+      sampleRateHertz: 16000,
+      languageCode: 'en-US',
+    };
+    const request = { audio, config };
+
+    console.log('Transcribing audio...');
+    const [response] = await client.recognize(request);
+    const transcription = response.results
+      .map(result => result.alternatives[0].transcript)
+      .join('\n');
+    console.log('Transcription complete:');
+    console.log(transcription);
+    trnascriptResponse['meet-transcript'] = transcription;
+  }
+  catch (e) {
+    console.log('Transcription Error:', e);
+    trnascriptResponse.success = false
+  }
+
+
+  return trnascriptResponse;
+
 }
